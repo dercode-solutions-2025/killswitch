@@ -1,115 +1,147 @@
+# KILLSWITCH v1.5 - Totality of Obliteration
 import os
-import shutil
 import json
+import shutil
 import random
 import string
-from datetime import datetime
-from organizer import organize_files
+import getpass
+from pathlib import Path
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
 
-# Settings
-TRIGGERWORDS_FILE = 'triggerwords.txt'
-KILL_LOG_FILE = 'kill_log.json'
-QUARANTINE_FOLDER = 'quarantine'
-USER_ACCEPT_FILE = 'user_accepted.txt'
+# Constants
+CONFIG_FILE = "killswitch_data.json"
+QUARANTINE_FOLDER = "quarantine"
+AES_KEY = get_random_bytes(32)  # AES-256
+BLOCK_SIZE = AES.block_size
 
-# Load trigger words
-with open(TRIGGERWORDS_FILE, 'r') as f:
-    TRIGGER_WORDS = f.read().split()
+SUSPICIOUS_KEYWORDS = [
+    "trojan", "malware", "virus", "worm", "spyware", "ransomware",
+    "backdoor", "keylogger", "botnet", "adware", "rootkit",
+    "danger", "hacktool", "stealer", "dropper", "suspicious"
+]
 
-# Create folders if not exist
-os.makedirs(QUARANTINE_FOLDER, exist_ok=True)
+ULTRA_ENCRYPTED_NAME = "~|!@#$%^&*()_+=-{}[]<>.,/"
 
-# Accept terms and conditions
-if not os.path.exists(USER_ACCEPT_FILE):
-    print("🚨 " + "_"*160)
-    print("⚠️ WARNING — REMOVE ANY IMPORTANT FILES YOU KNOW ARE SAFE. IF NOT, OUR SYSTEM WILL DETECT ONE OR MORE OF THE FOLLOWING COMMON KEYWORDS AND NEUTRALIZE YOUR FILE:")
-    print("|")
-    print("|", '   '.join(TRIGGER_WORDS))
-    print("🚫 " + "_"*160)
-    print("⚠️ WARNING — KILLSWITCH IS NOT RESPONSIBLE FOR LOST FILES. PROCEED ONLY IF YOU ACCEPT.")
-    accept = input("🖊️ Type 'I ACCEPT' to continue: ")
-    if accept.strip().upper() != "I ACCEPT":
-        print("❌ Access denied. Exiting.")
-        exit()
-    with open(USER_ACCEPT_FILE, 'w') as f:
-        f.write("Accepted on: " + str(datetime.now()))
+# Load or initialize config
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    else:
+        return {
+            "username": "",
+            "kills": 0,
+            "trophies": []
+        }
 
-# Function to generate encrypted extension
-def generate_encrypted_extension(length=8):
-    chars = string.ascii_lowercase + string.digits
-    return '.' + ''.join(random.choice(chars) for _ in range(length))
+# Save config
+def save_config(config):
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=4)
 
-# Load or initialize kill log
-if os.path.exists(KILL_LOG_FILE):
-    with open(KILL_LOG_FILE, 'r') as f:
-        kill_log = json.load(f)
-else:
-    username = input("👤 Enter your name for the trophy wall: ")
-    kill_log = {"kills": [], "achievements": [], "username": username}
+# Padding for AES
+def pad(s):
+    pad_len = BLOCK_SIZE - len(s) % BLOCK_SIZE
+    return s + bytes([pad_len] * pad_len)
 
-# Perform scan and quarantine
-def scan_directory(path):
-    print(f"\n🔍 Scanning directory: {path}")
-    file_list = os.listdir(path)
-    neutralized_count = 0
+def encrypt_file(input_path, output_path):
+    cipher = AES.new(AES_KEY, AES.MODE_CBC)
+    with open(input_path, "rb") as f:
+        data = pad(f.read())
+    with open(output_path, "wb") as f:
+        f.write(cipher.iv)
+        f.write(cipher.encrypt(data))
 
-    for file in file_list:
-        if os.path.isfile(os.path.join(path, file)):
-            for word in TRIGGER_WORDS:
-                if word.lower() in file.lower():
-                    print(f"⚠️ Potential threat found: {file}")
-                    choice = input("🛡️ Do you want to quarantine this file? (Y/N): ").strip().upper()
-                    if choice == 'Y':
-                        ext = generate_encrypted_extension()
-                        new_name = ''.join(random.choices(string.ascii_letters + string.digits, k=10)) + ext
-                        src = os.path.join(path, file)
-                        dst = os.path.join(QUARANTINE_FOLDER, new_name)
-                        shutil.move(src, dst)
-                        print(f"✅ Quarantined as: {new_name}")
+# Banner
+def print_banner():
+    print("""
+▀████▀ ▀███▀▀████▀████▀   ▀████▀    ▄█▀▀▀█▄█████▀     █     ▀███▀████▀██▀▀██▀▀███ ▄▄█▀▀▀█▄█████▀  ▀████▀▀
+  ██   ▄█▀    ██   ██       ██     ▄██    ▀█ ▀██     ▄██     ▄█   ██ █▀   ██   ▀███▀     ▀█ ██      ██   
+  ██ ▄█▀      ██   ██       ██     ▀███▄      ██▄   ▄███▄   ▄█    ██      ██    ██▀       ▀ ██      ██   
+  █████▄      ██   ██       ██       ▀█████▄   ██▄  █▀ ██▄  █▀    ██      ██    ██          ██████████   
+  ██  ███     ██   ██     ▄ ██     ▄     ▀██   ▀██ █▀  ▀██ █▀     ██      ██    ██▄         ██      ██   
+  ██   ▀██▄   ██   ██    ▄█ ██    ▄██     ██    ▄██▄    ▄██▄      ██      ██    ▀██▄     ▄▀ ██      ██   
+▄████▄   ███▄████▄██████████████████▀█████▀      ██      ██     ▄████▄  ▄████▄    ▀▀█████▀▄████▄  ▄████▄▄
+    """)
 
-                        kill_log['kills'].append({
-                            "original": file,
-                            "quarantined_as": new_name,
-                            "timestamp": str(datetime.now())
-                        })
+# Ask for name if needed
+def get_username(config):
+    if not config["username"]:
+        config["username"] = input("Welcome! What's your name? ")
+        save_config(config)
+    return config["username"]
 
-                        neutralized_count += 1
+# Scan and handle files
+def scan_directory(root_dir, config):
+    suspicious_files = []
+    for root, dirs, files in os.walk(root_dir):
+        for file in files:
+            file_path = os.path.join(root, file)
+            filename_lower = file.lower()
+            for keyword in SUSPICIOUS_KEYWORDS:
+                if keyword in filename_lower:
+                    suspicious_files.append(file_path)
+                    break
 
-                        # Achievements
-                        kills_len = len(kill_log['kills'])
-                        if kills_len == 5 and "Slayer I: 5 files neutralized." not in kill_log['achievements']:
-                            kill_log['achievements'].append("🏅 Slayer I: 5 files neutralized.")
-                            print("🎉 Achievement unlocked: Slayer I")
-                        if kills_len == 10 and "Obliterator X: 10+ confirmed threats." not in kill_log['achievements']:
-                            kill_log['achievements'].append("🏆 Obliterator X: 10+ confirmed threats.")
-                            print("🎉 Achievement unlocked: Obliterator X")
+    if not suspicious_files:
+        print("No threats found.")
+        return
 
-    return neutralized_count
+    print(f"\nFound {len(suspicious_files)} suspicious file(s):")
+    os.makedirs(QUARANTINE_FOLDER, exist_ok=True)
 
-# Save kill log
-def save_log():
-    with open(KILL_LOG_FILE, 'w') as f:
-        json.dump(kill_log, f, indent=4)
+    for fpath in suspicious_files:
+        print(f"\nThreat detected: {fpath}")
+        choice = input("(D)elete, (Q)uarantine, or (I)gnore? ").strip().lower()
 
-# Launch screen
-def launch_ascii():
-    banner = r"""
- _  _____ _     _     ______        _____ _____ ____ _   _ 
-| |/ /_ _| |   | |   / ___\ \      / /_ _|_   _/ ___| | | |
-| ' / | || |   | |   \___ \\ \ /\ / / | |  | || |   | |_| |
-| . \ | || |___| |___ ___) |\ V  V /  | |  | || |___|  _  |
-|_|\_\___|_____|_____|____/  \_/\_/  |___| |_| \____|_| |_|
+        if choice == 'd':
+            try:
+                os.remove(fpath)
+                config["kills"] += 1
+                print("File deleted.")
+            except:
+                print("Failed to delete file.")
+        elif choice == 'q':
+            try:
+                new_name = ULTRA_ENCRYPTED_NAME
+                enc_path = os.path.join(QUARANTINE_FOLDER, new_name)
+                encrypt_file(fpath, enc_path)
+                os.remove(fpath)
+                config["kills"] += 1
+                print("File quarantined and encrypted.")
+            except Exception as e:
+                print("Quarantine failed:", e)
+        else:
+            print("Ignored.")
 
-               KILLSWITCH v1.5: Totality of Obliteration
-"""
-    print(banner)
+    # Trophy examples
+    if config["kills"] >= 5 and "5 Kills" not in config["trophies"]:
+        config["trophies"].append("5 Kills")
+        print("🏆 Achievement Unlocked: 5 Kills!")
+    if config["kills"] >= 10 and "10 Kills" not in config["trophies"]:
+        config["trophies"].append("10 Kills")
+        print("🏆 Achievement Unlocked: 10 Kills!")
 
-# Main execution
+    save_config(config)
+
+# Main function
+def main():
+    print_banner()
+    config = load_config()
+    username = get_username(config)
+    print(f"Welcome back, {username}!")
+    print(f"Total threats neutralized: {config['kills']}")
+    if config['trophies']:
+        print("Trophies:", ", ".join(config['trophies']))
+
+    scan_path = input("\nEnter the full path of the directory to scan: ").strip()
+    if not os.path.isdir(scan_path):
+        print("Invalid directory.")
+        return
+
+    scan_directory(scan_path, config)
+    print("\nKILLSWITCH scan complete.")
+
 if __name__ == "__main__":
-    launch_ascii()
-    organize_files('.')  # Auto organize before scan
-    neutralized = scan_directory('.')
-    save_log()
-    print(f"\n🛡️ Scan complete. {neutralized} suspicious file(s) neutralized.")
-    print(f"🏆 Achievements: {', '.join(kill_log['achievements']) if kill_log['achievements'] else 'None yet'}")
-    print(f"📁 Neutralized files are in the folder: {os.path.abspath(QUARANTINE_FOLDER)}")
+    main()
