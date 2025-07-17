@@ -14,6 +14,7 @@ SUSPICIOUS_PATTERNS = [
     r"mal[-_]?ware", r"back[-_]?door", r"ad[-_]?ware", r"shell.*\\.bat",
     r"(install|setup).*\\.exe", r"(hack|crack).*"
 ]
+# Dangerous extensions check is now ignored for quarantine, but left for info.
 DANGEROUS_EXTENSIONS = [".exe", ".bat", ".dll", ".scr", ".vbs", ".cmd"]
 PROTECTED_PATHS = ["C:\\Windows", "C:\\Program Files", "/usr", "/etc"]
 QUARANTINE_DIR = "Quarantine"
@@ -57,8 +58,12 @@ def quarantine_file(path):
     filename = os.path.basename(path)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     new_path = os.path.join(QUARANTINE_DIR, f"{timestamp}_{filename}")
-    os.rename(path, new_path)
-    print(f"🔒 Quarantined: {filename}")
+    try:
+        os.rename(path, new_path)
+        print(f"🔒 Quarantined: {filename}")
+    except Exception as e:
+        print(f"[!] Failed to quarantine file {filename}: {e}")
+        new_path = None
     return new_path
 
 def is_protected_path(path):
@@ -75,6 +80,7 @@ def matches_suspicious_pattern(filename):
     return False
 
 def has_dangerous_extension(filename):
+    # This function is now informational only and does NOT trigger quarantine.
     return os.path.splitext(filename)[1].lower() in DANGEROUS_EXTENSIONS
 
 def check_file_size(filepath):
@@ -90,10 +96,12 @@ def check_file_size(filepath):
 
 def scan_file(filepath):
     name = os.path.basename(filepath)
+    # ONLY filename based detection (ignore extension quarantining)
     if matches_suspicious_pattern(name):
         return f"Filename matches suspicious pattern"
-    if has_dangerous_extension(name):
-        return f"Dangerous file extension"
+    # Commenting out extension quarantining:
+    # if has_dangerous_extension(name):
+    #     return f"Dangerous file extension"
     size_reason = check_file_size(filepath)
     if size_reason:
         return size_reason
@@ -112,28 +120,21 @@ def scan_folder(folder, data):
     for root, dirs, files in os.walk(folder):
         for file in files:
             path = os.path.join(root, file)
+            print(f"Scanning file: {path}")  # DEBUG
             if is_protected_path(path):
                 print(f"[-] Skipping protected system path: {path}")
                 continue
             reason = scan_file(path)
+            print(f"Reason found: {reason}")  # DEBUG
             if reason:
                 print(f"[!] Suspicious file: {path} — {reason}")
-                if data["auto_delete"]:
+                try:
                     new_path = quarantine_file(path)
-                    data["quarantined"] += 1
-                    log_threat(file, reason, "quarantined")
-                else:
-                    try:
-                        choice = input(f"Quarantine this file? (y/n): ").strip().lower()
-                    except (EOFError, OSError):
-                        choice = 'n'
-                    if choice == 'y':
-                        try:
-                            new_path = quarantine_file(path)
-                            data["quarantined"] += 1
-                            log_threat(file, reason, "quarantined")
-                        except Exception as e:
-                            print(f"[!] Failed to quarantine: {e}")
+                    if new_path:
+                        data["quarantined"] += 1
+                        log_threat(file, reason, "quarantined")
+                except Exception as e:
+                    print(f"[!] Failed to quarantine file {path}: {e}")
 
 # --------------------------- USER & TROPHIES ---------------------------
 def greet_user(data):
@@ -154,11 +155,8 @@ def greet_user(data):
             print(f" • {a}")
 
 def ask_auto_delete(data):
-    try:
-        choice = input("\nAuto-quarantine detected files? (y/n): ").strip().lower()
-    except (EOFError, OSError):
-        choice = 'n'
-    data["auto_delete"] = (choice == 'y')
+    # Auto delete is forced True, no input needed
+    data["auto_delete"] = True
 
 def check_achievements(data):
     unlocked = []
@@ -179,7 +177,7 @@ def main():
     data = load_user_data()
     data["runs"] += 1
     greet_user(data)
-    ask_auto_delete(data)
+    ask_auto_delete(data)  # forced True
 
     try:
         start = input("\nStart scan? (y/n): ").strip().lower()
