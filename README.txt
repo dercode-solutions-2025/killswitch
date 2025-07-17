@@ -1,0 +1,5 @@
+It all started when I hopped on TF2. I wanted variety to my game. I downloaded a mod, to no avail. Don't know why it didn't work. Went to GameBanana, found the SAME mod, had NO VIRUS WARNING, downloaded it.
+I got a Trojan Horse malware. I had to delete all of my apps, files, saves, everything. Windows 11 is a great OS and all, but try for once. AVG works, but it's paid. I need to add free virus protection for all.
+So, here comes KILLSWITCH 1.0, my first edition of a watchdog, I tried, and it should work. I don't have full certainty, because of my limited experience with this, but it will work. It searches for keywords like "trojan" or "malware", among others.
+It asks if you want to delete it, and it saves its kills as trophies in a .json file, and references accomplishments on startup. As a bonus, it remembers your name, so that's cool I guess.
+Anyways, have fun with KILLSWITCH and it's abilities. Goodbye, good luck. To test it, put it in a blank folder with a file of any extension, just make sure the name fits one of the keywords.
