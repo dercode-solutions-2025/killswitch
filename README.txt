@@ -3,3 +3,4 @@ I got a Trojan Horse malware. I had to delete all of my apps, files, saves, ever
 So, here comes KILLSWITCH 1.0, my first edition of a watchdog, I tried, and it should work. I don't have full certainty, because of my limited experience with this, but it will work. It searches for keywords like "trojan" or "malware", among others.
 It asks if you want to delete it, and it saves its kills as trophies in a .json file, and references accomplishments on startup. As a bonus, it remembers your name, so that's cool I guess.
 Anyways, have fun with KILLSWITCH and it's abilities. Goodbye, good luck. To test it, put it in a blank folder with a file of any extension, just make sure the name fits one of the keywords.
+It saves the quarantined file in an extension so encrypted, it will take NASA supercomputers decades to decipher a SINGULAR DIGIT. Why? So nobody can open the encrypted file from an external source, I figured they will have to guess the file name to get to it.
