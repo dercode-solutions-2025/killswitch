@@ -1,203 +1,97 @@
-# KillSwitch v1.1, "Only God can stop us."
-# Terminal-based antivirus tool with pattern detection, quarantine, achievements, and user logging
-
 import os
 import json
-import time
-import re
-import sys
+import getpass
+import shutil
+import string
+import random
+from datetime import datetime
 
-# --------------------------- CONFIGURATION ---------------------------
-SUSPICIOUS_KEYWORDS = ["trojan", "virus", "malware", "spyware", "worm", "keylogger", "backdoor", "adware", "shareware"]
-SUSPICIOUS_PATTERNS = [
-    r"troj[a@]n", r"vir[u0]s", r"spy[-_]?ware", r"key[-_]?logger",
-    r"mal[-_]?ware", r"back[-_]?door", r"ad[-_]?ware", r"shell.*\\.bat",
-    r"(install|setup).*\\.exe", r"(hack|crack).*"
-]
-# Dangerous extensions check is now ignored for quarantine, but left for info.
-DANGEROUS_EXTENSIONS = [".exe", ".bat", ".dll", ".scr", ".vbs", ".cmd"]
-PROTECTED_PATHS = ["C:\\Windows", "C:\\Program Files", "/usr", "/etc"]
-QUARANTINE_DIR = "Quarantine"
-DATA_FILE = "aether_data.json"
-THREAT_LOG_FILE = "threat_log.json"
+# === ASCII Banner ===
+banner = r"""
+ _  _____ _     _     ______        _____ _____ ____ _   _ 
+| |/ /_ _| |   | |   / ___\ \      / /_ _|_   _/ ___| | | |
+| ' / | || |   | |   \___ \\ \ /\ / / | |  | || |   | |_| |
+| . \ | || |___| |___ ___) |\ V  V /  | |  | || |___|  _  |
+|_|\_\___|_____|_____|____/  \_/\_/  |___| |_| \____|_| |_|
+              v1.5 - Totality of Obliteration
+"""
 
-ACHIEVEMENTS = {
-    "Identity Crisis Solved": lambda d: d["name"] != "",
-    "Cleanup Crew": lambda d: len(d["deletions"]) >= 5,
-    "Digital Exorcist": lambda d: "trojan.exe" in d["deletions"],
-    "Bug Hunter": lambda d: d.get("runs", 0) >= 10,
-    "Firewall of Justice": lambda d: d.get("quarantined", 0) >= 3,
-}
+print(banner)
 
-# --------------------------- UTILITIES ---------------------------
-def load_user_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r') as f:
-            return json.load(f)
-    return {"name": "", "deletions": [], "auto_delete": False, "achievements": [], "runs": 0, "quarantined": 0}
+# === Settings ===
+keywords = ["trojan", "malware", "virus", "keylogger", "worm", "spyware", "malware", "adware", "ware", "ransomware"]
+quarantine_folder = "quarantine"
+log_file = "killswitch_data.json"
+neutralized_extension = ".~|!@#$%^&*()_+=-{}[]<>.,/,"
 
-def save_user_data(data):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+# === Load or initialize log file ===
+if not os.path.exists(log_file):
+    data = {
+        "runs": 0,
+        "kills": 0,
+        "quarantined": [],
+        "user": getpass.getuser()
+    }
+else:
+    with open(log_file, "r") as f:
+        data = json.load(f)
 
-def log_threat(filename, reason, action):
-    entry = {"timestamp": time.ctime(), "file": filename, "reason": reason, "action": action}
-    if not os.path.exists(THREAT_LOG_FILE):
-        with open(THREAT_LOG_FILE, 'w') as f:
-            json.dump([entry], f, indent=4)
-    else:
-        with open(THREAT_LOG_FILE, 'r+') as f:
-            data = json.load(f)
-            data.append(entry)
-            f.seek(0)
-            json.dump(data, f, indent=4)
+data["runs"] += 1
 
-def quarantine_file(path):
-    if not os.path.exists(QUARANTINE_DIR):
-        os.makedirs(QUARANTINE_DIR)
-    filename = os.path.basename(path)
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    new_path = os.path.join(QUARANTINE_DIR, f"{timestamp}_{filename}")
-    try:
-        os.rename(path, new_path)
-        print(f"🔒 Quarantined: {filename}")
-    except Exception as e:
-        print(f"[!] Failed to quarantine file {filename}: {e}")
-        new_path = None
-    return new_path
+print(f"\nWelcome back, {data['user']}! This is run #{data['runs']}.")
+print(f"Total threats neutralized: {data['kills']}\n")
 
-def is_protected_path(path):
-    for protected in PROTECTED_PATHS:
-        if path.lower().startswith(protected.lower()):
-            return True
-    return False
+# === Ensure quarantine folder exists ===
+if not os.path.exists(quarantine_folder):
+    os.makedirs(quarantine_folder)
 
-# --------------------------- FILE SCANNING ---------------------------
-def matches_suspicious_pattern(filename):
-    for pattern in SUSPICIOUS_PATTERNS:
-        if re.search(pattern, filename.lower()):
-            return True
-    return False
+# === Ask for scan path ===
+scan_path = input("Enter the full path of the folder to scan: (e.g., C:\Users\You\Download) ").strip()
 
-def has_dangerous_extension(filename):
-    # This function is now informational only and does NOT trigger quarantine.
-    return os.path.splitext(filename)[1].lower() in DANGEROUS_EXTENSIONS
+if not os.path.exists(scan_path):
+    print("Invalid path. Exiting.")
+    exit()
 
-def check_file_size(filepath):
-    try:
-        size = os.path.getsize(filepath)
-        if size == 0:
-            return "File is empty (possible malware stub)"
-        elif size > 500 * 1024 * 1024:
-            return "Suspiciously large file"
-    except:
-        return None
-    return None
+# === Scan files ===
+suspicious_files = []
 
-def scan_file(filepath):
-    name = os.path.basename(filepath)
-    # ONLY filename based detection (ignore extension quarantining)
-    if matches_suspicious_pattern(name):
-        return f"Filename matches suspicious pattern"
-    # Commenting out extension quarantining:
-    # if has_dangerous_extension(name):
-    #     return f"Dangerous file extension"
-    size_reason = check_file_size(filepath)
-    if size_reason:
-        return size_reason
-    try:
-        with open(filepath, 'r', errors='ignore') as f:
-            content = f.read().lower()
-            for keyword in SUSPICIOUS_KEYWORDS:
-                if keyword in content:
-                    return f"File content contains '{keyword}'"
-    except:
-        pass
-    return None
+for root, _, files in os.walk(scan_path):
+    for file in files:
+        name_only = os.path.splitext(file)[0].lower()
+        if any(keyword in name_only for keyword in keywords):
+            full_path = os.path.join(root, file)
+            suspicious_files.append(full_path)
 
-def scan_folder(folder, data):
-    print(f"\n[+] Scanning: {folder}")
-    for root, dirs, files in os.walk(folder):
-        for file in files:
-            path = os.path.join(root, file)
-            print(f"Scanning file: {path}")  # DEBUG
-            if is_protected_path(path):
-                print(f"[-] Skipping protected system path: {path}")
-                continue
-            reason = scan_file(path)
-            print(f"Reason found: {reason}")  # DEBUG
-            if reason:
-                print(f"[!] Suspicious file: {path} — {reason}")
-                try:
-                    new_path = quarantine_file(path)
-                    if new_path:
-                        data["quarantined"] += 1
-                        log_threat(file, reason, "quarantined")
-                except Exception as e:
-                    print(f"[!] Failed to quarantine file {path}: {e}")
+if not suspicious_files:
+    print("✅ No suspicious files found.")
+else:
+    print(f"\n⚠️ Found {len(suspicious_files)} suspicious file(s):")
+    for i, path in enumerate(suspicious_files, 1):
+        print(f"  {i}. {path}")
 
-# --------------------------- USER & TROPHIES ---------------------------
-def greet_user(data):
-    if not data["name"]:
-        try:
-            name = input("Welcome to AetherCleaner! What is your name? ").strip()
-        except (EOFError, OSError):
-            name = "Guest"
-        data["name"] = name
-    print(f"Welcome back, {data['name']}!")
-    if data["deletions"]:
-        print("\n🧹 Files you've removed:")
-        for f in data["deletions"]:
-            print(f" - {f}")
-    if data["achievements"]:
-        print("\n🏆 Achievements:")
-        for a in data["achievements"]:
-            print(f" • {a}")
+    action = input("\nDo you want to NEUTRALIZE and QUARANTINE these files? (yes/no): ").strip().lower()
+    if action == "yes":
+        for file_path in suspicious_files:
+            try:
+                filename = os.path.basename(file_path)
+                new_name = ''.join(random.choices(string.ascii_letters + string.digits, k=32)) + neutralized_extension
+                new_path = os.path.join(quarantine_folder, new_name)
 
-def ask_auto_delete(data):
-    # Auto delete is forced True, no input needed
-    data["auto_delete"] = True
+                shutil.move(file_path, new_path)
+                data["quarantined"].append({
+                    "original_name": filename,
+                    "quarantined_name": new_name,
+                    "time": datetime.now().isoformat()
+                })
+                data["kills"] += 1
+                print(f"☣️ Neutralized: {filename} ➜ {new_name}")
+            except Exception as e:
+                print(f"❌ Error neutralizing {file_path}: {e}")
 
-def check_achievements(data):
-    unlocked = []
-    for name, check in ACHIEVEMENTS.items():
-        if check(data) and name not in data["achievements"]:
-            data["achievements"].append(name)
-            unlocked.append(name)
-    return unlocked
+# === Save data ===
+with open(log_file, "w") as f:
+    json.dump(data, f, indent=2)
 
-def display_new_achievements(achs):
-    if achs:
-        print("\n🎉 New Achievements Unlocked:")
-        for a in achs:
-            print(f" 🏅 {a}")
-
-# --------------------------- MAIN ---------------------------
-def main():
-    data = load_user_data()
-    data["runs"] += 1
-    greet_user(data)
-    ask_auto_delete(data)  # forced True
-
-    try:
-        start = input("\nStart scan? (y/n): ").strip().lower()
-    except (EOFError, OSError):
-        start = 'n'
-
-    if start == 'y':
-        try:
-            path = input("Enter folder to scan: ").strip()
-        except (EOFError, OSError):
-            print("Unable to get folder path input.")
-            path = ""
-        if os.path.isdir(path):
-            scan_folder(path, data)
-        else:
-            print("Invalid folder path.")
-
-    new_achs = check_achievements(data)
-    display_new_achievements(new_achs)
-    save_user_data(data)
-
-if __name__ == "__main__":
-    main()
+# === Exit message ===
+print("\n💀 KILLSWITCH v1.5: Totality of Obliteration complete.")
+print(f"💾 {data['kills']} total file(s) neutralized across all runs.\n")
