@@ -1,49 +1,37 @@
-# KILLSWITCH v1.5 - Totality of Obliteration
 import os
 import json
 import shutil
-import random
-import string
-import getpass
 from pathlib import Path
+from tkinter import Tk, Label, Button, filedialog, messagebox
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 
-# Constants
+# ---------------- CONFIG ----------------
 CONFIG_FILE = "killswitch_data.json"
 QUARANTINE_FOLDER = "quarantine"
 AES_KEY = get_random_bytes(32)  # AES-256
 BLOCK_SIZE = AES.block_size
-
+ULTRA_ENCRYPTED_NAME = "~|!@#$%^&*()_+=-{}[]<>.,/"
 SUSPICIOUS_KEYWORDS = [
     "trojan", "malware", "virus", "worm", "spyware", "ransomware",
     "backdoor", "keylogger", "botnet", "adware", "rootkit",
     "danger", "hacktool", "stealer", "dropper", "suspicious"
 ]
 
-ULTRA_ENCRYPTED_NAME = "~|!@#$%^&*()_+=-{}[]<>.,/"
-
-# Load or initialize config
+# ---------------- HELPER FUNCTIONS ----------------
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
-    else:
-        return {
-            "username": "",
-            "kills": 0,
-            "trophies": []
-        }
+    return {"username": "", "kills": 0, "trophies": []}
 
-# Save config
 def save_config(config):
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=4)
 
-# Padding for AES
-def pad(s):
-    pad_len = BLOCK_SIZE - len(s) % BLOCK_SIZE
-    return s + bytes([pad_len] * pad_len)
+def pad(data):
+    pad_len = BLOCK_SIZE - len(data) % BLOCK_SIZE
+    return data + bytes([pad_len] * pad_len)
 
 def encrypt_file(input_path, output_path):
     cipher = AES.new(AES_KEY, AES.MODE_CBC)
@@ -53,95 +41,66 @@ def encrypt_file(input_path, output_path):
         f.write(cipher.iv)
         f.write(cipher.encrypt(data))
 
-# Banner
-def print_banner():
-    print("""
-▀████▀ ▀███▀▀████▀████▀   ▀████▀    ▄█▀▀▀█▄█████▀     █     ▀███▀████▀██▀▀██▀▀███ ▄▄█▀▀▀█▄█████▀  ▀████▀▀
-  ██   ▄█▀    ██   ██       ██     ▄██    ▀█ ▀██     ▄██     ▄█   ██ █▀   ██   ▀███▀     ▀█ ██      ██   
-  ██ ▄█▀      ██   ██       ██     ▀███▄      ██▄   ▄███▄   ▄█    ██      ██    ██▀       ▀ ██      ██   
-  █████▄      ██   ██       ██       ▀█████▄   ██▄  █▀ ██▄  █▀    ██      ██    ██          ██████████   
-  ██  ███     ██   ██     ▄ ██     ▄     ▀██   ▀██ █▀  ▀██ █▀     ██      ██    ██▄         ██      ██   
-  ██   ▀██▄   ██   ██    ▄█ ██    ▄██     ██    ▄██▄    ▄██▄      ██      ██    ▀██▄     ▄▀ ██      ██   
-▄████▄   ███▄████▄██████████████████▀█████▀      ██      ██     ▄████▄  ▄████▄    ▀▀█████▀▄████▄  ▄████▄▄
-    """)
+# ---------------- GUI CLASS ----------------
+class KILLSWITCHGUI:
+    def __init__(self, master):
+        self.master = master
+        master.title("KILLSWITCH 2.0 Watchdog")
+        master.geometry("500x350")
 
-# Ask for name if needed
-def get_username(config):
-    if not config["username"]:
-        config["username"] = input("Welcome! What's your name? ")
-        save_config(config)
-    return config["username"]
+        self.config = load_config()
+        if not self.config["username"]:
+            self.config["username"] = filedialog.askstring("Welcome", "Enter your name:")
+            save_config(self.config)
 
-# Scan and handle files
-def scan_directory(root_dir, config):
-    suspicious_files = []
-    for root, dirs, files in os.walk(root_dir):
-        for file in files:
-            file_path = os.path.join(root, file)
-            filename_lower = file.lower()
-            for keyword in SUSPICIOUS_KEYWORDS:
-                if keyword in filename_lower:
-                    suspicious_files.append(file_path)
-                    break
+        Label(master, text=f"KILLSWITCH 2.0 - Welcome {self.config['username']}", font=("Courier", 16)).pack(pady=10)
+        Button(master, text="Scan Directory", command=self.scan_directory_gui).pack(pady=5)
+        Button(master, text="View Quarantine", command=self.view_quarantine).pack(pady=5)
+        Button(master, text="Exit", command=master.quit).pack(pady=10)
 
-    if not suspicious_files:
-        print("No threats found.")
-        return
+    def scan_directory_gui(self):
+        folder = filedialog.askdirectory()
+        if not folder:
+            return
+        threats = []
+        for root, dirs, files in os.walk(folder):
+            for file in files:
+                if any(k in file.lower() for k in SUSPICIOUS_KEYWORDS):
+                    threats.append(os.path.join(root, file))
 
-    print(f"\nFound {len(suspicious_files)} suspicious file(s):")
-    os.makedirs(QUARANTINE_FOLDER, exist_ok=True)
+        if not threats:
+            messagebox.showinfo("Scan Result", "No threats detected.")
+            return
 
-    for fpath in suspicious_files:
-        print(f"\nThreat detected: {fpath}")
-        choice = input("(D)elete, (Q)uarantine, or (I)gnore? ").strip().lower()
+        os.makedirs(QUARANTINE_FOLDER, exist_ok=True)
+        for fpath in threats:
+            choice = messagebox.askquestion("Threat Detected", f"File: {fpath}\nQuarantine it?")
+            if choice == 'yes':
+                try:
+                    enc_path = os.path.join(QUARANTINE_FOLDER, ULTRA_ENCRYPTED_NAME)
+                    encrypt_file(fpath, enc_path)
+                    os.remove(fpath)
+                    self.config["kills"] += 1
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to quarantine: {fpath}\n{e}")
+        save_config(self.config)
+        messagebox.showinfo("Scan Complete", f"Scan finished. Total kills: {self.config['kills']}")
 
-        if choice == 'd':
-            try:
-                os.remove(fpath)
-                config["kills"] += 1
-                print("File deleted.")
-            except:
-                print("Failed to delete file.")
-        elif choice == 'q':
-            try:
-                new_name = ULTRA_ENCRYPTED_NAME
-                enc_path = os.path.join(QUARANTINE_FOLDER, new_name)
-                encrypt_file(fpath, enc_path)
-                os.remove(fpath)
-                config["kills"] += 1
-                print("File quarantined and encrypted.")
-            except Exception as e:
-                print("Quarantine failed:", e)
-        else:
-            print("Ignored.")
+    def view_quarantine(self):
+        if not os.path.exists(QUARANTINE_FOLDER):
+            messagebox.showinfo("Quarantine", "No files quarantined yet.")
+            return
+        files = os.listdir(QUARANTINE_FOLDER)
+        if not files:
+            messagebox.showinfo("Quarantine", "No files quarantined yet.")
+            return
+        messagebox.showinfo("Quarantine", "\n".join(files))
 
-    # Trophy examples
-    if config["kills"] >= 5 and "5 Kills" not in config["trophies"]:
-        config["trophies"].append("5 Kills")
-        print("🏆 Achievement Unlocked: 5 Kills!")
-    if config["kills"] >= 10 and "10 Kills" not in config["trophies"]:
-        config["trophies"].append("10 Kills")
-        print("🏆 Achievement Unlocked: 10 Kills!")
-
-    save_config(config)
-
-# Main function
+# ---------------- MAIN ----------------
 def main():
-    print_banner()
-    config = load_config()
-    username = get_username(config)
-    print(f"Welcome back, {username}!")
-    print(f"Total threats neutralized: {config['kills']}")
-    if config['trophies']:
-        print("Trophies:", ", ".join(config['trophies']))
-
-    scan_path = input("\nEnter the full path of the directory to scan: ").strip()
-    if not os.path.isdir(scan_path):
-        print("Invalid directory.")
-        return
-
-    scan_directory(scan_path, config)
-    print("\nKILLSWITCH scan complete.")
+    root = Tk()
+    app = KILLSWITCHGUI(root)
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
